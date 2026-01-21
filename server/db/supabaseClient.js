@@ -6,26 +6,24 @@ const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.VITE_SU
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 const JWT_SECRET = process.env.SUPABASE_JWT_SECRET; 
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.error('Missing Supabase Environment Variables!');
-  console.error('URL:', SUPABASE_URL); // Debug
-  console.error('KEY:', SUPABASE_SERVICE_KEY ? 'Present' : 'Missing');
-}
+// Validate variables before initialization to prevent crash
+const canInitialize = SUPABASE_URL && SUPABASE_SERVICE_KEY;
 
-if (!JWT_SECRET) {
-  console.warn('WARNING: SUPABASE_JWT_SECRET is missing. Custom scoped tokens cannot be generated. RLS might fail or be bypassed if not careful.');
-  console.error('JWT_SECRET Is Missing from env!');
-} else {
-    // console.log('JWT Secret loaded successfully');
+if (!canInitialize) {
+  console.error('CRITICAL ERROR: Supabase client cannot be initialized due to missing variables.');
+  console.error('Please ensure the following are set in your environment (Dashbord or .env):');
+  console.error('- SUPABASE_URL (or VITE_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_URL)');
+  console.error('- SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY / VITE_SUPABASE_ANON_KEY)');
 }
 
 // 1. Service Role Client (for admin tasks / trusted backend ops if needed)
-const adminSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+// Initialize as null if variables are missing to prevent immediate process crash
+const adminSupabase = canInitialize ? createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: {
     autoRefreshToken: false,
     persistSession: false
   }
-});
+}) : null;
 
 /**
  * Returns a Supabase client scoped to the verification firebase_uid.
@@ -44,6 +42,7 @@ const createSupabaseToken = (firebaseUid) => {
     sub: firebaseUid,
     role: 'authenticated',
     aud: 'authenticated',
+    iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + (60 * 60) // 1 hour expiration
   };
 
@@ -54,6 +53,7 @@ const createSupabaseToken = (firebaseUid) => {
  * Returns a Supabase client scoped to the verification firebase_uid.
  */
 const getScopedSupabase = (firebaseUid) => {
+  if (!canInitialize) return null;
   const token = createSupabaseToken(firebaseUid);
 
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
