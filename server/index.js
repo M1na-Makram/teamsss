@@ -1,4 +1,8 @@
-require('dotenv').config();
+const path = require('path');
+// Load env vars from local folder, then root folder as fallback
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
 const express = require('express');
 const cors = require('cors');
 require('./config/firebase');
@@ -19,7 +23,8 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'https://teamminy-81323.web.app',
-  'https://teamminy-81323.firebaseapp.com'
+  'https://teamminy-81323.firebaseapp.com',
+  'https://teamsss-production.up.railway.app'
 ];
 
 app.use(cors({
@@ -87,20 +92,24 @@ app.listen(PORT, () => {
 
   console.log('Initializing Realtime Notification Listener...');
   
-  adminSupabase
-    .channel('server-notifications')
-    .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'notifications' 
-    }, async (payload) => {
-        const { user_id, title, body, metadata } = payload.new;
-        console.log('New DB Notification detected:', title);
-        await sendPushToUser(user_id, title, body, metadata || {});
-    })
-    .subscribe((status) => {
-        console.log('Notification Listener Status:', status);
-    });
+  if (adminSupabase) {
+    adminSupabase
+      .channel('server-notifications')
+      .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'notifications' 
+      }, async (payload) => {
+          const { user_id, title, body, metadata } = payload.new;
+          console.log('New DB Notification detected:', title);
+          await sendPushToUser(user_id, title, body, metadata || {});
+      })
+      .subscribe((status) => {
+          console.log('Notification Listener Status:', status);
+      });
+  } else {
+    console.error('❌ Skipping Realtime Listener: adminSupabase not initialized (Missing Env Vars)');
+  }
 });
 
 // Debug keep-alive
