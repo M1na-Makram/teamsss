@@ -88,11 +88,12 @@ app.listen(PORT, () => {
   
   // Initialize Realtime Notification Listener
   const { adminSupabase } = require('./db/supabaseClient');
-  const { sendPushToUser } = require('./services/notificationService');
+  const { sendPushToUser, sendNotification } = require('./services/notificationService');
 
   console.log('Initializing Realtime Notification Listener...');
   
   if (adminSupabase) {
+    // Listener for individual notifications
     adminSupabase
       .channel('server-notifications')
       .on('postgres_changes', { 
@@ -106,6 +107,51 @@ app.listen(PORT, () => {
       })
       .subscribe((status) => {
           console.log('Notification Listener Status:', status);
+      });
+
+    // Listener for admin broadcasts
+    adminSupabase
+      .channel('server-broadcasts')
+      .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'admin_broadcasts' 
+      }, async (payload) => {
+          const { title, body, target_type, priority } = payload.new;
+          console.log('[Broadcast] New admin broadcast detected:', title);
+          
+          try {
+            // Get all users with FCM tokens
+            let query = adminSupabase.from('profiles').select('id, fcm_token, role');
+            
+            if (target_type === 'students') {
+              query = query.or('role.eq.user,role.is.null');
+            } else if (target_type === 'leaders') {
+              query = query.eq('role', 'leader');
+            } else if (target_type === 'doctors') {
+              query = query.eq('role', 'doctor');
+            }
+            
+            const { data: users } = await query;
+            const usersWithTokens = users?.filter(u => u.fcm_token) || [];
+            
+            console.log(`[Broadcast] Sending to ${usersWithTokens.length} users with FCM tokens`);
+            
+            // Send to each user
+            for (const user of usersWithTokens) {
+              await sendNotification(user.id, 'admin_broadcast', title, body, {
+                priority: priority || 'normal',
+                broadcastType: target_type || 'all'
+              });
+            }
+            
+            console.log(`[Broadcast] Completed sending to ${usersWithTokens.length} users`);
+          } catch (error) {
+            console.error('[Broadcast] Error sending broadcast notifications:', error.message);
+          }
+      })
+      .subscribe((status) => {
+          console.log('Broadcast Listener Status:', status);
       });
   } else {
     console.error('❌ Skipping Realtime Listener: adminSupabase not initialized (Missing Env Vars)');
